@@ -1,3 +1,4 @@
+import sys
 import mss
 import mss.tools
 from PIL import Image, ImageDraw, ImageFont
@@ -6,15 +7,35 @@ import re
 from deep_translator import GoogleTranslator
 import os
 
+# 設定 Tesseract 的執行路徑 (優先使用打包附帶的可攜版)
+# PyInstaller 打包後，檔案會解壓縮到 sys._MEIPASS 或在同層目錄
+if hasattr(sys, '_MEIPASS'):
+    base_dir = sys._MEIPASS
+else:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+
+bundled_tesseract = os.path.join(base_dir, "Tesseract-OCR", "tesseract.exe")
+if os.path.exists(bundled_tesseract):
+    pytesseract.pytesseract.tesseract_cmd = bundled_tesseract
+else:
+    # 預設嘗試系統環境變數
+    pass
+
 def capture_screen(x, y, width, height, output_filename="temp_capture.png"):
     """
     擷取指定座標範圍的螢幕畫面並儲存為圖片檔
     """
+    temp_dir = os.path.join(base_dir, "temp")
+    if not os.path.exists(temp_dir):
+        os.makedirs(temp_dir, exist_ok=True)
+        
+    out_path = os.path.join(temp_dir, output_filename)
+        
     with mss.mss() as sct:
         monitor = {"top": y, "left": x, "width": width, "height": height}
         sct_img = sct.grab(monitor)
-        mss.tools.to_png(sct_img.rgb, sct_img.size, output=output_filename)
-        return output_filename
+        mss.tools.to_png(sct_img.rgb, sct_img.size, output=out_path)
+        return out_path
 
 def get_chinese_font(size):
     """嘗試載入支援中文的字體"""

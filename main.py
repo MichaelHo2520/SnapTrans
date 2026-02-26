@@ -37,21 +37,13 @@ class HotkeyThread(QThread):
         self.hotkey_triggered.emit()
 
 
-def create_tray_icon():
-    """創建一個簡單的預設圖示用於系統列"""
-    pixmap = QPixmap(32, 32)
-    pixmap.fill(Qt.transparent)
-    
-    # 畫一個簡單的翻譯意象圖標 (藍色底，白色字)
-    pixmap.fill(QColor("#4A90E2"))
-    from PyQt5.QtGui import QPainter, QFont
-    painter = QPainter(pixmap)
-    painter.setPen(Qt.white)
-    painter.setFont(QFont("Arial", 16, QFont.Bold))
-    painter.drawText(pixmap.rect(), Qt.AlignCenter, "文")
-    painter.end()
-    
-    return QIcon(pixmap)
+# 載入資源檔
+HAS_EMBEDDED_ICON = False
+try:
+    import icon_data
+    HAS_EMBEDDED_ICON = True
+except ImportError:
+    pass
 
 class SnapTransApp:
     def __init__(self):
@@ -61,7 +53,13 @@ class SnapTransApp:
         self.target_rect = None
         
         # 建立系統列圖示
-        self.tray_icon = QSystemTrayIcon(create_tray_icon(), QApplication.instance())
+        tray_icon_img = QIcon()
+        if HAS_EMBEDDED_ICON and hasattr(icon_data, 'ICON_PNG_BYTES'):
+            pixmap = QPixmap()
+            pixmap.loadFromData(icon_data.ICON_PNG_BYTES)
+            tray_icon_img = QIcon(pixmap)
+        
+        self.tray_icon = QSystemTrayIcon(tray_icon_img, QApplication.instance())
         self.tray_icon.setToolTip("SnapTrans 沉浸式翻譯工具 (Ctrl+F1)")
         
         # 建立右鍵選單
@@ -177,6 +175,12 @@ if __name__ == '__main__':
     
     # 2. 初始化 PyQt5 應用程式
     app = QApplication(sys.argv)
+    
+    # 載入 Window Icon
+    if HAS_EMBEDDED_ICON and hasattr(icon_data, 'ICON_PNG_BYTES'):
+        pixmap = QPixmap()
+        pixmap.loadFromData(icon_data.ICON_PNG_BYTES)
+        app.setWindowIcon(QIcon(pixmap))
     
     # 防止 selection_window 隱藏時觸發自動關閉應用程式的情境
     # 設定為 False 可以確保即使所有視窗關閉，程式仍會在背景透過 Tray Icon 存活
