@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+temp_capture.png
+temp_capture_translated.png
+.venv/
+venv/
+env/

@@ -1,0 +1,5 @@
+PyQt5
+mss
+pytesseract
+Pillow
+deep-translator
