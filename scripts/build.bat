@@ -20,7 +20,8 @@ echo 開始打包專案...
 :: 我們使用 --noconsole 隱藏背景的終端機視窗，並命名為 SnapTrans
 :: 使用 --add-data 將 Tesseract-OCR 目錄打包進來
 :: 使用 --icon 指定打包出來的 EXE 圖示
-pyinstaller --noconsole --name "SnapTrans" --add-data "Tesseract-OCR;Tesseract-OCR" --icon="icon/icon.ico" main.py
+:: 新增 --exclude-module 來排除不必要的龐大套件，為打包瘦身
+pyinstaller --noconsole --name "SnapTrans" --add-data "Tesseract-OCR;Tesseract-OCR" --icon="icon/icon.ico" --exclude-module scipy --exclude-module pandas --exclude-module matplotlib --exclude-module numpy --exclude-module IPython --exclude-module PyQt5.QtNetwork --exclude-module PyQt5.QtQml --exclude-module PyQt5.QtSql --exclude-module PyQt5.QtWebSockets --exclude-module PyQt5.QtWebEngineCore --exclude-module PyQt5.QtBluetooth --exclude-module tkinter main.py
 
 if %errorlevel%==0 (
     echo.

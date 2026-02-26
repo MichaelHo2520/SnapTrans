@@ -5,3 +5,7 @@ temp_capture_translated.png
 .venv/
 venv/
 env/
+temp/
+build/
+dist/
+*.spec
