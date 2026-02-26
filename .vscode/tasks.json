@@ -1,0 +1,47 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "打包 SnapTrans",
+      "type": "shell",
+      "command": "${workspaceFolder}/build.bat",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "部署 SnapTrans",
+      "type": "shell",
+      "command": "${workspaceFolder}/deploy.bat",
+      "group": {
+        "kind": "none"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build & Deploy SnapTrans",
+      "dependsOn": [
+        "打包 SnapTrans",
+        "部署 SnapTrans"
+      ],
+      "dependsOrder": "sequence",
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      },
+      "problemMatcher": []
+    }
+  ]
+}
