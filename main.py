@@ -1,25 +1,57 @@
 import sys
 import ctypes
-from PyQt5.QtWidgets import QApplication, QMessageBox
-from PyQt5.QtCore import Qt
+import keyboard
+from PyQt5.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QMenu, QAction
+from PyQt5.QtCore import Qt, pyqtSignal, QThread
+from PyQt5.QtGui import QIcon, QPixmap, QColor
 from ui import SelectionWindow, ImageOverlayWindow, TranslationWorker
 
 def set_dpi_awareness():
     """
-    DPI 系統感知：
-    在程式最開頭呼叫 Windows API 處理高解析度螢幕（如 4K 或 150% 縮放）的縮放問題，
-    確保後續抓取的螢幕座標絕對精準（不會因此而偏移或截圖錯位）。
+    DPI 系統感知：確保後續抓取的螢幕座標絕對精準。
     """
     if sys.platform == 'win32':
         try:
-            # 優先嘗試 Windows 8.1 之後的 DPI 感知設定 (PROCESS_PER_MONITOR_DPI_AWARE)
             ctypes.windll.shcore.SetProcessDpiAwareness(2)
         except Exception:
             try:
-                # 替補方案：Windows Vista 之後的系統
                 ctypes.windll.user32.SetProcessDPIAware()
             except Exception:
                 pass
+
+
+class HotkeyThread(QThread):
+    """
+    在背景監聽全域快捷鍵的執行緒，當觸發時透過 signal 通知主畫面彈出
+    """
+    hotkey_triggered = pyqtSignal()
+
+    def run(self):
+        # 註冊全域快捷鍵 Ctrl+F1
+        # 添加 suppress=False 避免干擾其他軟體的快速鍵如果發生衝突
+        keyboard.add_hotkey('ctrl+f1', self.on_hotkey)
+        # 讓執行緒持續等待直到被終止
+        keyboard.wait()
+        
+    def on_hotkey(self):
+        self.hotkey_triggered.emit()
+
+
+def create_tray_icon():
+    """創建一個簡單的預設圖示用於系統列"""
+    pixmap = QPixmap(32, 32)
+    pixmap.fill(Qt.transparent)
+    
+    # 畫一個簡單的翻譯意象圖標 (藍色底，白色字)
+    pixmap.fill(QColor("#4A90E2"))
+    from PyQt5.QtGui import QPainter, QFont
+    painter = QPainter(pixmap)
+    painter.setPen(Qt.white)
+    painter.setFont(QFont("Arial", 16, QFont.Bold))
+    painter.drawText(pixmap.rect(), Qt.AlignCenter, "文")
+    painter.end()
+    
+    return QIcon(pixmap)
 
 class SnapTransApp:
     def __init__(self):
@@ -27,11 +59,58 @@ class SnapTransApp:
         self.result_window = None
         self.worker = None
         self.target_rect = None
+        
+        # 建立系統列圖示
+        self.tray_icon = QSystemTrayIcon(create_tray_icon(), QApplication.instance())
+        self.tray_icon.setToolTip("SnapTrans 沉浸式翻譯工具 (Ctrl+F1)")
+        
+        # 建立右鍵選單
+        self.menu = QMenu()
+        
+        self.action_translate = QAction("開始翻譯 (Ctrl+F1)")
+        self.action_translate.triggered.connect(self.start_selection)
+        
+        self.action_quit = QAction("退出程式")
+        self.action_quit.triggered.connect(self.quit_app)
+        
+        self.menu.addAction(self.action_translate)
+        self.menu.addSeparator()
+        self.menu.addAction(self.action_quit)
+        
+        self.tray_icon.setContextMenu(self.menu)
+        self.tray_icon.show()
+        
+        # 啟動快捷鍵監聽執行緒
+        self.hotkey_thread = HotkeyThread()
+        self.hotkey_thread.hotkey_triggered.connect(self.start_selection)
+        self.hotkey_thread.start()
 
     def run(self):
         """
-        啟動應用程式並顯示選取視窗
+        啟動應用程式。現在只會駐留在系統列，不會在一開始顯示選取視窗。
+        可以選擇顯示一個氣泡提示告訴使用者程式已經啟動。
         """
+        self.tray_icon.showMessage(
+            "SnapTrans 啟動成功",
+            "工具已在背景執行。\n請按下 Ctrl+F1 或點擊右鍵選單開始截圖翻譯。",
+            QSystemTrayIcon.Information,
+            3000
+        )
+
+    def start_selection(self):
+        """
+        開始進行截圖框選
+        """
+        # 如果已經在選取狀態或已經顯示結果，將其關閉重製
+        if self.selection_window:
+            self.selection_window.close()
+            self.selection_window.deleteLater()
+            
+        if self.result_window:
+            self.result_window.close()
+            self.result_window.deleteLater()
+            self.result_window = None
+            
         self.selection_window = SelectionWindow()
         self.selection_window.selection_completed.connect(self.on_selection_completed)
         self.selection_window.selection_cancelled.connect(self.on_selection_cancelled)
@@ -39,23 +118,19 @@ class SnapTransApp:
 
     def on_selection_cancelled(self):
         """
-        當使用者取消選取（點擊空白後放開或按ESC）時，關閉並退出程式
+        當使用者取消選取（點擊空白後放開或按ESC）時，只關閉遮罩，不退出程式
         """
-        QApplication.quit()
+        self.selection_window.close()
+        self.selection_window.deleteLater()
+        self.selection_window = None
 
     def on_selection_completed(self, rect):
         """
         使用者完成選取後觸發，啟用 QThread 背景翻譯，並改變滑鼠游標狀態以提示載入中。
         """
-        # 儲存選取的座標用於後續顯示結果
         self.target_rect = rect
-        
-        # 選取視窗已經在釋放滑鼠時隱藏了，避免截圖拍到 UI
-        
-        # 將全域滑鼠游標設定為讀取狀態（沙漏或旋轉圈圈）
         QApplication.setOverrideCursor(Qt.WaitCursor)
         
-        # 啟動背景執行緒執行截圖、OCR與翻譯，防止主執行緒介面卡頓
         self.worker = TranslationWorker(rect)
         self.worker.finished.connect(self.on_translation_finished)
         self.worker.error.connect(self.on_translation_error)
@@ -65,32 +140,36 @@ class SnapTransApp:
         """
         當背景翻譯與影像處理成功後觸發，顯示翻譯好的圖片
         """
-        # 恢復正常游標
         QApplication.restoreOverrideCursor()
         
-        # 建立專屬圖片顯示視窗
         if not self.result_window:
             self.result_window = ImageOverlayWindow()
             
-        # 傳遞翻譯完畢的圖片路徑與一開始選取的座標方塊
         self.result_window.set_image(out_img_path, self.target_rect)
         
-        # 視窗已經建立並顯示，現在可以釋放選取視窗的資源
         self.selection_window.close()
+        self.selection_window.deleteLater()
+        self.selection_window = None
 
     def on_translation_error(self, error_msg):
         """
         翻譯或 OCR 過程發生錯誤或找不到文字時觸發，彈出錯誤提示
         """
-        # 恢復正常游標
         QApplication.restoreOverrideCursor()
-        
-        # 顯示警告畫面區塊
         QMessageBox.warning(None, "發生錯誤", error_msg)
         
-        # 關閉並釋放選取視窗，強制結束程式
         self.selection_window.close()
+        self.selection_window.deleteLater()
+        self.selection_window = None
+
+    def quit_app(self):
+        """完全退出程式，停止監聽執行緒"""
+        # keyboard 庫終止監聽
+        keyboard.unhook_all()
+        # 隱藏系統圖標
+        self.tray_icon.hide()
         QApplication.quit()
+
 
 if __name__ == '__main__':
     # 1. 在建立 QApplication 之前務必設定好 DPI 感知
@@ -100,7 +179,7 @@ if __name__ == '__main__':
     app = QApplication(sys.argv)
     
     # 防止 selection_window 隱藏時觸發自動關閉應用程式的情境
-    # 因為我們會在背景執行完畢後才決定要顯示 ImageOverlayWindow 或因出錯而主動退出
+    # 設定為 False 可以確保即使所有視窗關閉，程式仍會在背景透過 Tray Icon 存活
     app.setQuitOnLastWindowClosed(False)
     
     # 3. 執行主程式核心邏輯

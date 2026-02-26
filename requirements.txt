@@ -3,3 +3,4 @@ mss
 pytesseract
 Pillow
 deep-translator
+keyboard
