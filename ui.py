@@ -2,7 +2,7 @@ import sys
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QApplication, 
                              QLabel, QRubberBand, QMessageBox)
 from PyQt5.QtCore import Qt, QRect, QPoint, pyqtSignal, QThread, QSize
-from PyQt5.QtGui import QCursor, QColor, QPainter, QPixmap
+from PyQt5.QtGui import QCursor, QColor, QPainter, QPixmap, QPen
 
 from core import capture_screen, process_and_translate_image
 
@@ -56,12 +56,20 @@ class SelectionWindow(QWidget):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         # 背景透明化，以便自己繪製半透明遮罩
         self.setAttribute(Qt.WA_TranslucentBackground)
+        # 確保視窗能接收鍵盤事件
+        self.setFocusPolicy(Qt.StrongFocus)
         # 將滑鼠指標改為十字型
         self.setCursor(Qt.CrossCursor)
 
         # 取得所有螢幕範圍並設置為全螢幕
         screen_rect = QApplication.primaryScreen().geometry()
         self.setGeometry(screen_rect)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # 視窗顯示後立即搶焦點，確保能接收到 ESC 等鍵盤輸入
+        self.activateWindow()
+        self.setFocus()
 
     def paintEvent(self, event):
         """
@@ -116,6 +124,8 @@ class ImageOverlayWindow(QWidget):
     def initUI(self):
         # 設置無邊框、置頂與 Tool 屬性 (避免出現在工作列)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        # 確保視窗能接收鍵盤事件
+        self.setFocusPolicy(Qt.StrongFocus)
         
         # 主版面佈局：零邊距以完全貼齊圖片
         main_layout = QVBoxLayout()
@@ -133,17 +143,39 @@ class ImageOverlayWindow(QWidget):
         設定並顯示翻譯好的圖片，視窗將完全蓋住原來的區域
         """
         pixmap = QPixmap(image_path)
+        
+        # 在圖片邊緣繪製紅色外框
+        border_width = 3
+        painter = QPainter(pixmap)
+        pen = QPen(QColor(220, 30, 30))
+        pen.setWidth(border_width)
+        painter.setPen(pen)
+        painter.drawRect(
+            border_width // 2,
+            border_width // 2,
+            pixmap.width() - border_width,
+            pixmap.height() - border_width
+        )
+        painter.end()
+        
         self.image_label.setPixmap(pixmap)
         
         self.setGeometry(target_rect)
         self.show()
         self.activateWindow()
+        self.setFocus()
+
+    def keyPressEvent(self, event):
+        # 按下 ESC 關閉此 overlay，程式繼續在系統列執行
+        if event.key() == Qt.Key_Escape:
+            self.hide()
 
     def mousePressEvent(self, event):
-        # 點擊圖片的任何位置都會直接關閉退出程式
+        # 點擊圖片關閉此 overlay，程式繼續在系統列執行
         if event.button() == Qt.LeftButton:
-            QApplication.quit()
+            self.hide()
 
     def closeEvent(self, event):
-        QApplication.quit()
-        event.accept()
+        # 只隱藏視窗，不退出整個程式
+        self.hide()
+        event.ignore()

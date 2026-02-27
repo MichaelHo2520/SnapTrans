@@ -28,11 +28,13 @@ class HotkeyThread(QThread):
 
     def run(self):
         # 註冊全域快捷鍵 Ctrl+F1
-        # 添加 suppress=False 避免干擾其他軟體的快速鍵如果發生衝突
         keyboard.add_hotkey('ctrl+f1', self.on_hotkey)
-        # 讓執行緒持續等待直到被終止
-        keyboard.wait()
-        
+        # 讓執行緒持續等待直到被終止；捕捉例外避免程式崩潰
+        try:
+            keyboard.wait()
+        except (KeyboardInterrupt, SystemExit):
+            pass
+
     def on_hotkey(self):
         self.hotkey_triggered.emit()
 
@@ -162,9 +164,10 @@ class SnapTransApp:
 
     def quit_app(self):
         """完全退出程式，停止監聽執行緒"""
-        # keyboard 庫終止監聽
-        keyboard.unhook_all()
-        # 隱藏系統圖標
+        try:
+            keyboard.unhook_all()
+        except Exception:
+            pass
         self.tray_icon.hide()
         QApplication.quit()
 
