@@ -14,11 +14,12 @@ class TranslationWorker(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, rect, font_path='', font_family=''):
+    def __init__(self, rect, font_path='', font_family='', ocr_engine='windows'):
         super().__init__()
         self.rect = rect
         self.font_path = font_path
         self.font_family = font_family
+        self.ocr_engine = ocr_engine
 
     def run(self):
         try:
@@ -32,7 +33,8 @@ class TranslationWorker(QThread):
             out_img_path, err_msg = process_and_translate_image(
                 img_path, 
                 font_path=self.font_path or None,
-                font_family=self.font_family or None
+                font_family=self.font_family or None,
+                ocr_engine=self.ocr_engine
             )
             
             if err_msg:

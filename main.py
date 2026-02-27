@@ -1,6 +1,7 @@
 import sys
 import ctypes
 import keyboard
+import signal
 from PyQt5.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QMenu, QAction, QFontDialog
 from PyQt5.QtCore import Qt, pyqtSignal, QThread
 from PyQt5.QtGui import QIcon, QPixmap, QColor, QFont
@@ -60,6 +61,7 @@ class SnapTransApp:
         self._cfg = cfg_module.load_config()
         self.font_path = self._cfg.get('font_path', '')
         self.font_family = self._cfg.get('font_family', '')
+        self.ocr_engine = self._cfg.get('ocr_engine', 'windows')
         
         # 建立系統列圖示
         tray_icon_img = QIcon()
@@ -84,6 +86,24 @@ class SnapTransApp:
         self.action_font = QAction("設定字體...")
         self.action_font.triggered.connect(self.open_font_settings)
         
+        # OCR 引擎選擇 (次選單)
+        self.menu_engine = QMenu("字元辨識引擎", self.menu)
+        
+        self.action_engine_win = QAction("Windows 內建 OCR (推薦、速度快)", self.menu, checkable=True)
+        self.action_engine_tes = QAction("Tesseract OCR (傳統)", self.menu, checkable=True)
+        
+        # 根據設定打勾
+        if self.ocr_engine == 'tesseract':
+            self.action_engine_tes.setChecked(True)
+        else:
+            self.action_engine_win.setChecked(True)
+            
+        self.action_engine_win.triggered.connect(lambda: self.set_ocr_engine('windows'))
+        self.action_engine_tes.triggered.connect(lambda: self.set_ocr_engine('tesseract'))
+        
+        self.menu_engine.addAction(self.action_engine_win)
+        self.menu_engine.addAction(self.action_engine_tes)
+        
         self.action_quit = QAction("退出程式")
         self.action_quit.triggered.connect(self.quit_app)
         
@@ -91,6 +111,7 @@ class SnapTransApp:
         self.menu.addSeparator()
         self.menu.addAction(self.action_translate)
         self.menu.addAction(self.action_font)
+        self.menu.addMenu(self.menu_engine)
         self.menu.addSeparator()
         self.menu.addAction(self.action_quit)
         
@@ -157,10 +178,31 @@ class SnapTransApp:
         self.loading_window = LoadingOverlayWindow(rect)
         self.loading_window.show()
         
-        self.worker = TranslationWorker(rect, font_path=self.font_path, font_family=self.font_family)
+        self.worker = TranslationWorker(
+            rect, 
+            font_path=self.font_path, 
+            font_family=self.font_family,
+            ocr_engine=self.ocr_engine
+        )
         self.worker.finished.connect(self.on_translation_finished)
         self.worker.error.connect(self.on_translation_error)
         self.worker.start()
+
+    def set_ocr_engine(self, engine: str):
+        """切換 OCR 引擎並儲存設定"""
+        self.ocr_engine = engine
+        self._cfg['ocr_engine'] = engine
+        cfg_module.save_config(self._cfg)
+        
+        # UI 單選互斥處理
+        if engine == 'windows':
+            self.action_engine_win.setChecked(True)
+            self.action_engine_tes.setChecked(False)
+            self.tray_icon.showMessage("引擎切換", "已切換為：Windows 內建 OCR", QSystemTrayIcon.Information, 2000)
+        else:
+            self.action_engine_win.setChecked(False)
+            self.action_engine_tes.setChecked(True)
+            self.tray_icon.showMessage("引擎切換", "已切換為：Tesseract OCR", QSystemTrayIcon.Information, 2000)
 
     def open_font_settings(self):
         """開啟字體選擇對話框，儲存至 config.json"""
@@ -255,8 +297,14 @@ if __name__ == '__main__':
     # 設定為 False 可以確保即使所有視窗關閉，程式仍會在背景透過 Tray Icon 存活
     app.setQuitOnLastWindowClosed(False)
     
+    # 確保終端機按下 Ctrl+C 時能被 Python 擷取並退出
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    
     # 3. 執行主程式核心邏輯
     snap_app = SnapTransApp()
     snap_app.run()
     
-    sys.exit(app.exec_())
+    try:
+        sys.exit(app.exec_())
+    except KeyboardInterrupt:
+        snap_app.quit_app()
