@@ -1,10 +1,11 @@
 import sys
 import ctypes
 import keyboard
-from PyQt5.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QMenu, QAction
+from PyQt5.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QMenu, QAction, QFontDialog
 from PyQt5.QtCore import Qt, pyqtSignal, QThread
-from PyQt5.QtGui import QIcon, QPixmap, QColor
-from ui import SelectionWindow, ImageOverlayWindow, TranslationWorker
+from PyQt5.QtGui import QIcon, QPixmap, QColor, QFont
+from ui import SelectionWindow, ImageOverlayWindow, TranslationWorker, LoadingOverlayWindow
+import config as cfg_module
 
 def set_dpi_awareness():
     """
@@ -51,8 +52,14 @@ class SnapTransApp:
     def __init__(self):
         self.selection_window = None
         self.result_window = None
+        self.loading_window = None
         self.worker = None
         self.target_rect = None
+        
+        # 載入設定
+        self._cfg = cfg_module.load_config()
+        self.font_path = self._cfg.get('font_path', '')
+        self.font_family = self._cfg.get('font_family', '')
         
         # 建立系統列圖示
         tray_icon_img = QIcon()
@@ -67,13 +74,23 @@ class SnapTransApp:
         # 建立右鍵選單
         self.menu = QMenu()
         
+        # 版本資訊（置頂，不可點擊）
+        self.action_version = QAction("SnapTrans  V1.00")
+        self.action_version.setEnabled(False)
+        
         self.action_translate = QAction("開始翻譯 (Ctrl+F1)")
         self.action_translate.triggered.connect(self.start_selection)
+        
+        self.action_font = QAction("設定字體...")
+        self.action_font.triggered.connect(self.open_font_settings)
         
         self.action_quit = QAction("退出程式")
         self.action_quit.triggered.connect(self.quit_app)
         
+        self.menu.addAction(self.action_version)
+        self.menu.addSeparator()
         self.menu.addAction(self.action_translate)
+        self.menu.addAction(self.action_font)
         self.menu.addSeparator()
         self.menu.addAction(self.action_quit)
         
@@ -111,6 +128,11 @@ class SnapTransApp:
             self.result_window.deleteLater()
             self.result_window = None
             
+        if self.loading_window:
+            self.loading_window.close()
+            self.loading_window.deleteLater()
+            self.loading_window = None
+            
         self.selection_window = SelectionWindow()
         self.selection_window.selection_completed.connect(self.on_selection_completed)
         self.selection_window.selection_cancelled.connect(self.on_selection_cancelled)
@@ -131,16 +153,53 @@ class SnapTransApp:
         self.target_rect = rect
         QApplication.setOverrideCursor(Qt.WaitCursor)
         
-        self.worker = TranslationWorker(rect)
+        # 顯示「辨識中...」
+        self.loading_window = LoadingOverlayWindow(rect)
+        self.loading_window.show()
+        
+        self.worker = TranslationWorker(rect, font_path=self.font_path, font_family=self.font_family)
         self.worker.finished.connect(self.on_translation_finished)
         self.worker.error.connect(self.on_translation_error)
         self.worker.start()
+
+    def open_font_settings(self):
+        """開啟字體選擇對話框，儲存至 config.json"""
+        # 建立当前已設定字體的預視 QFont
+        current_family = self._cfg.get('font_family', '')
+        initial_font = QFont(current_family) if current_family else QFont()
+        
+        font, ok = QFontDialog.getFont(initial_font, None, "選擇翻譯字體")
+        if not ok:
+            return
+        
+        family = font.family()
+        # 搜尋對應的字型檔路徑
+        path = cfg_module.find_font_path(family)
+        
+        self._cfg['font_family'] = family
+        self._cfg['font_path'] = path
+        self.font_path = path
+        self.font_family = family
+        cfg_module.save_config(self._cfg)
+        
+        # 小提示確認
+        display = f"字體已設為：{family}"
+        if not path:
+            display += "\n（找不到對應的字型檔，將使用預設字體）"
+        self.tray_icon.showMessage("字體設定", display,
+                                   QSystemTrayIcon.Information, 2500)
 
     def on_translation_finished(self, out_img_path):
         """
         當背景翻譯與影像處理成功後觸發，顯示翻譯好的圖片
         """
         QApplication.restoreOverrideCursor()
+        
+        # 關閉載入提示
+        if self.loading_window:
+            self.loading_window.close()
+            self.loading_window.deleteLater()
+            self.loading_window = None
         
         if not self.result_window:
             self.result_window = ImageOverlayWindow()
@@ -156,6 +215,13 @@ class SnapTransApp:
         翻譯或 OCR 過程發生錯誤或找不到文字時觸發，彈出錯誤提示
         """
         QApplication.restoreOverrideCursor()
+        
+        # 關閉載入提示
+        if self.loading_window:
+            self.loading_window.close()
+            self.loading_window.deleteLater()
+            self.loading_window = None
+            
         QMessageBox.warning(None, "發生錯誤", error_msg)
         
         self.selection_window.close()

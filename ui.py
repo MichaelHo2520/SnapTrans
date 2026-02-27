@@ -1,6 +1,6 @@
 import sys
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QApplication, 
-                             QLabel, QRubberBand, QMessageBox)
+                             QLabel, QRubberBand, QMessageBox, QMenu, QAction)
 from PyQt5.QtCore import Qt, QRect, QPoint, pyqtSignal, QThread, QSize
 from PyQt5.QtGui import QCursor, QColor, QPainter, QPixmap, QPen
 
@@ -14,9 +14,11 @@ class TranslationWorker(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, rect):
+    def __init__(self, rect, font_path='', font_family=''):
         super().__init__()
         self.rect = rect
+        self.font_path = font_path
+        self.font_family = font_family
 
     def run(self):
         try:
@@ -27,7 +29,11 @@ class TranslationWorker(QThread):
             img_path = capture_screen(x, y, w, h)
             
             # 2. OCR 辨識、翻譯與影像合成
-            out_img_path, err_msg = process_and_translate_image(img_path)
+            out_img_path, err_msg = process_and_translate_image(
+                img_path, 
+                font_path=self.font_path or None,
+                font_family=self.font_family or None
+            )
             
             if err_msg:
                 self.error.emit(err_msg)
@@ -61,9 +67,9 @@ class SelectionWindow(QWidget):
         # 將滑鼠指標改為十字型
         self.setCursor(Qt.CrossCursor)
 
-        # 取得所有螢幕範圍並設置為全螢幕
-        screen_rect = QApplication.primaryScreen().geometry()
-        self.setGeometry(screen_rect)
+        # 取得所有螢幕組成的虛擬桌面總範圍（多螢幕環境下覆蓋所有螢幕）
+        virtual_rect = QApplication.primaryScreen().virtualGeometry()
+        self.setGeometry(virtual_rect)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -113,6 +119,47 @@ class SelectionWindow(QWidget):
             self.selection_cancelled.emit()
 
 
+class LoadingOverlayWindow(QWidget):
+    """
+    在 OCR 辨識期間顯示「辨識中...」的小視窗，覆蓋在使用者剛選取的範圍中央。
+    """
+    def __init__(self, target_rect):
+        super().__init__()
+        # 無邊框、置頂、不顯示在工作列
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        # 整個視窗半透明
+        self.setWindowOpacity(0.85)
+        
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 標籤樣式：深色背景、白字、圓角
+        self.label = QLabel("辨識中...")
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setStyleSheet("""
+            QLabel {
+                background-color: #333333;
+                color: white;
+                font-size: 16px;
+                font-weight: bold;
+                padding: 10px 20px;
+                border-radius: 8px;
+            }
+        """)
+        
+        main_layout.addWidget(self.label)
+        self.setLayout(main_layout)
+        
+        # 計算視窗大小並置中於 target_rect
+        self.adjustSize()
+        w = self.width()
+        h = self.height()
+        
+        # 將自己擺在目標框的正中央
+        cx = target_rect.x() + target_rect.width() // 2
+        cy = target_rect.y() + target_rect.height() // 2
+        self.move(cx - w // 2, cy - h // 2)
+
 class ImageOverlayWindow(QWidget):
     """
     就地圖片翻譯顯示視窗：無邊框、將翻譯好的圖片直接貼回螢幕上原來的位置。
@@ -124,23 +171,20 @@ class ImageOverlayWindow(QWidget):
     def initUI(self):
         # 設置無邊框、置頂與 Tool 屬性 (避免出現在工作列)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        # 透明背景：讓視窗可以覆蓋整個桌面但只顯示圖片
+        self.setAttribute(Qt.WA_TranslucentBackground)
         # 確保視窗能接收鍵盤事件
         self.setFocusPolicy(Qt.StrongFocus)
         
-        # 主版面佈局：零邊距以完全貼齊圖片
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.image_label = QLabel()
-        # 設定滑鼠指標為手型提示使用者可點擊關閉
-        self.image_label.setCursor(Qt.PointingHandCursor) 
-        
-        main_layout.addWidget(self.image_label)
-        self.setLayout(main_layout)
+        # image_label 用絕對定位，不使用 layout
+        self.image_label = QLabel(self)
+        self.image_label.setCursor(Qt.PointingHandCursor)
 
     def set_image(self, image_path, target_rect):
         """
-        設定並顯示翻譯好的圖片，視窗將完全蓋住原來的區域
+        設定並顯示翻譯好的圖片。
+        視窗覆蓋整個虛擬桌面（透明），點擊任何地方都可關閉。
+        圖片以絕對座標貼在原始位置。
         """
         pixmap = QPixmap(image_path)
         
@@ -159,11 +203,26 @@ class ImageOverlayWindow(QWidget):
         painter.end()
         
         self.image_label.setPixmap(pixmap)
+        self.image_label.setFixedSize(pixmap.size())
         
-        self.setGeometry(target_rect)
+        # 視窗覆蓋整個虛擬桌面（多螢幕合併）
+        virtual_rect = QApplication.primaryScreen().virtualGeometry()
+        self.setGeometry(virtual_rect)
+        
+        # 圖片位置：target_rect 相對於虛擬桌面左上角的偏移
+        img_x = target_rect.x() - virtual_rect.x()
+        img_y = target_rect.y() - virtual_rect.y()
+        self.image_label.move(img_x, img_y)
+        
         self.show()
         self.activateWindow()
         self.setFocus()
+
+    def paintEvent(self, event):
+        # Windows 上 alpha=0 的區域會穿透滑鼠事件
+        # 用幾乎不可見的底色（alpha=1）填滿，確保整個視窗都能接收點擊
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 1))
 
     def keyPressEvent(self, event):
         # 按下 ESC 關閉此 overlay，程式繼續在系統列執行
@@ -171,9 +230,28 @@ class ImageOverlayWindow(QWidget):
             self.hide()
 
     def mousePressEvent(self, event):
-        # 點擊圖片關閉此 overlay，程式繼續在系統列執行
         if event.button() == Qt.LeftButton:
+            # 左鍵點擊：關閉 overlay
             self.hide()
+        elif event.button() == Qt.RightButton:
+            # 右鍵：顯示操作選單
+            menu = QMenu(self)
+            action_copy = QAction("複製圖片", self)
+            action_close = QAction("關閉", self)
+            menu.addAction(action_copy)
+            menu.addSeparator()
+            menu.addAction(action_close)
+
+            action_copy.triggered.connect(self._copy_to_clipboard)
+            action_close.triggered.connect(self.hide)
+
+            menu.exec_(event.globalPos())
+
+    def _copy_to_clipboard(self):
+        """將目前顯示的翻譯圖片複製到系統剪貼簿"""
+        pixmap = self.image_label.pixmap()
+        if pixmap:
+            QApplication.clipboard().setPixmap(pixmap)
 
     def closeEvent(self, event):
         # 只隱藏視窗，不退出整個程式
