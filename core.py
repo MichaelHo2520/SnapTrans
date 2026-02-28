@@ -4,6 +4,9 @@ import mss.tools
 from PIL import Image, ImageDraw, ImageFont
 import pytesseract
 import re
+import string
+import statistics
+import requests
 from deep_translator import GoogleTranslator
 import os
 import asyncio
@@ -82,19 +85,75 @@ def get_chinese_font(size, preferred_path=None, family_name=None):
             continue
     return ImageFont.load_default()
 
-def process_and_translate_image(image_path, font_path=None, font_family=None, ocr_engine='tesseract'):
+def _is_cjk(ch):
+    """判斷字元是否屬於 CJK 漢字或全形標點範圍"""
+    return '\u4e00' <= ch <= '\u9fff' or '\u3000' <= ch <= '\u303f' or '\uff00' <= ch <= '\uffef'
+
+
+_bing_token_cache: dict = {}   # {'token': str, 'expires': float}
+
+
+def _get_bing_token() -> str:
+    """
+    從 Edge 瀏覽器的翻譯服務取得免費的 Bearer Token（無需 API Key）。
+    Token 有效期約 10 分鐘，使用模組層級快取避免頻繁請求。
+    """
+    import time
+    now = time.time()
+    if _bing_token_cache.get('token') and now < _bing_token_cache.get('expires', 0):
+        return _bing_token_cache['token']
+
+    resp = requests.get('https://edge.microsoft.com/translate/auth', timeout=10)
+    resp.raise_for_status()
+    token = resp.text.strip()
+    _bing_token_cache['token'] = token
+    _bing_token_cache['expires'] = now + 540   # 快取 9 分鐘 (保守估計)
+    return token
+
+
+def _translate(text: str, engine: str = 'google') -> str:
+    """
+    統一翻譯入口。engine: 'google' | 'bing'
+    """
+    if not text or not text.strip():
+        return text
+
+    # ---- Bing 翻譯（免費，無需 Key，透過 Edge 內建 Token）----
+    if engine == 'bing':
+        try:
+            token = _get_bing_token()
+            url = 'https://api.cognitive.microsofttranslator.com/translate'
+            params  = {'api-version': '3.0', 'to': 'zh-Hant'}
+            headers = {'Authorization': f'Bearer {token}',
+                       'Content-Type':  'application/json'}
+            resp = requests.post(url, params=params, headers=headers,
+                                 json=[{'text': text}], timeout=10)
+            resp.raise_for_status()
+            return resp.json()[0]['translations'][0]['text']
+        except Exception:
+            pass   # 失敗時 fallback 至 Google
+
+    # ---- Google Translator（預設 / fallback）----
+    try:
+        return GoogleTranslator(source='auto', target='zh-TW').translate(text)
+    except Exception:
+        return text
+
+
+def process_and_translate_image(image_path, font_path=None, font_family=None,
+                                ocr_engine='tesseract',
+                                translator_engine='google'):
     """
     讀取圖片、進行 OCR 定位、翻譯文字，並將翻譯結果直接繪製(覆蓋)回圖片上。
-    改進：以水平間距做二次分組，避免同行不同段落被合為一組。
-    font_path: 使用者指定的字型檔路徑（None 表示自動選擇）
-    font_family: 使用者指定的字型名稱
-    ocr_engine: 'tesseract' 或 'windows'
+    font_path:         使用者指定的字型檔路徑（None 表示自動選擇）
+    font_family:       使用者指定的字型名稱
+    ocr_engine:        'tesseract' 或 'windows'
+    translator_engine: 'google' 或 'bing'
     """
     try:
         img = Image.open(image_path).convert('RGB')
     except Exception as e:
         return None, f"無法開啟圖片: {e}"
-        
     draw = ImageDraw.Draw(img)
     
     # 1. 收集有效單字（過濾低信心、空字串、純雜訊、單一字元圖示誤判）
@@ -237,18 +296,16 @@ def process_and_translate_image(image_path, font_path=None, font_family=None, oc
             total_width = sum(x['width'] for x in group)
             avg_char_w = total_width / total_chars if total_chars > 0 else 10
             
-            # 放寬間距到平均字寬 2.5 倍或 20px 確保中文全形標點不會被斷開
-            if gap > max(avg_char_w * 2.5, 20):
+            # 修正間距判斷邏輯：如果間隔大於平均字寬 1.5 倍或 12px，視為獨立區塊
+            # (降低原先 20px 的硬限制，避免小字體的選單列如 File Edit 被合併成一整行)
+            if gap > max(avg_char_w * 1.5, 12):
                 final_groups.append(group)
                 group = [curr]
             else:
                 group.append(curr)
-        final_groups.append(group)
-    
-    translator = GoogleTranslator(source='auto', target='zh-TW')
+        final_groups.append(group)   # 必須在 for words 迴圈內，每條 line 結束後都要 append
     
     # 3. 計算統一字體大小（以所有群組行高的中位數為基準，避免字大小不一）
-    import statistics
     all_heights = []
     for group in final_groups:
         h = max(w['top'] + w['height'] for w in group) - min(w['top'] for w in group)
@@ -288,30 +345,40 @@ def process_and_translate_image(image_path, font_path=None, font_family=None, oc
             if abs(luminance - (0.299*fg_color[0] + 0.587*fg_color[1] + 0.114*fg_color[2])) < 50:
                 fg_color = (0, 0, 0)
         
-        # 智慧字串組合：中文字之間不加空白，中英文之間或單純英文之間才加空白
-        import string
+        # 智慧字串組合：
+        # - 中英文 / 英中 之間加空白
+        # - 純英文 token 之間加空白
+        # - 兩個相鄰中文 token 之間若有「大間距」（可能是被過濾掉的標點），也加空白
+
+        # 預先算出本群組的平均字元寬（用來判斷「明顯間距」）
+        grp_total_chars = sum(len(x['text']) for x in group)
+        grp_total_width = sum(x['width'] for x in group)
+        grp_avg_char_w  = grp_total_width / grp_total_chars if grp_total_chars > 0 else 14
+
         eng_text = ""
-        for w in group:
+        for wi, w in enumerate(group):
             t = w['text']
             if not eng_text:
                 eng_text = t
             else:
-                last_char = eng_text[-1]
+                prev_w   = group[wi - 1]
+                pixel_gap = w['left'] - (prev_w['left'] + prev_w['width'])
+
+                last_char  = eng_text[-1]
                 first_char = t[0]
-                # 判斷是否為「非」中日韓文字 (即英文或數字)
-                last_is_ascii = last_char in string.ascii_letters or last_char in string.digits or last_char in string.punctuation
-                first_is_ascii = first_char in string.ascii_letters or first_char in string.digits or first_char in string.punctuation
-                
-                # 如果前一個字和後一個字都是中文字，就不加空白
-                if not last_is_ascii and not first_is_ascii:
-                    eng_text += t
+                last_is_cjk  = _is_cjk(last_char)
+                first_is_cjk = _is_cjk(first_char)
+
+                if last_is_cjk and first_is_cjk:
+                    # 兩邊都是中文：只有在間距明顯偏大時才插空白（表示中文標點被過濾掉了）
+                    if pixel_gap > grp_avg_char_w * 0.8:
+                        eng_text += " " + t
+                    else:
+                        eng_text += t
                 else:
-                    # 只要有一個是英文/數字，就加上空白
+                    # 只要有一個是英文/數字/ASCII，就加上空白
                     eng_text += " " + t
-        try:
-            zh_text = translator.translate(eng_text)
-        except Exception:
-            zh_text = eng_text
+        zh_text = _translate(eng_text, translator_engine)
         
         # 蓋掉原文 (使用更大的 padding 來確保原始文字的邊角完全被覆蓋)
         draw.rectangle((p_left, p_top, p_right, p_bottom), fill=bg_color)

@@ -2,10 +2,12 @@ import sys
 import ctypes
 import keyboard
 import signal
-from PyQt5.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon, QMenu, QAction, QFontDialog
+from PyQt5.QtWidgets import (QApplication, QMessageBox, QSystemTrayIcon,
+                             QMenu, QAction, QFontDialog)
 from PyQt5.QtCore import Qt, pyqtSignal, QThread
 from PyQt5.QtGui import QIcon, QPixmap, QColor, QFont
 from ui import SelectionWindow, ImageOverlayWindow, TranslationWorker, LoadingOverlayWindow
+from core import capture_screen
 import config as cfg_module
 
 def set_dpi_awareness():
@@ -59,9 +61,10 @@ class SnapTransApp:
         
         # 載入設定
         self._cfg = cfg_module.load_config()
-        self.font_path = self._cfg.get('font_path', '')
-        self.font_family = self._cfg.get('font_family', '')
-        self.ocr_engine = self._cfg.get('ocr_engine', 'windows')
+        self.font_path          = self._cfg.get('font_path', '')
+        self.font_family        = self._cfg.get('font_family', '')
+        self.ocr_engine         = self._cfg.get('ocr_engine', 'windows')
+        self.translator_engine  = self._cfg.get('translator_engine', 'google')
         
         # 建立系統列圖示
         tray_icon_img = QIcon()
@@ -106,12 +109,32 @@ class SnapTransApp:
         
         self.action_quit = QAction("退出程式")
         self.action_quit.triggered.connect(self.quit_app)
+
+        # 翻譯引擎選擇 (次選單)
+        self.menu_translator = QMenu("翻譯引擎", self.menu)
+
+        self.action_trans_google = QAction(
+            "Google 翻譯（免費、無需 Key）", self.menu, checkable=True)
+        self.action_trans_bing = QAction(
+            "Bing 翻譯（免費、無需 Key）", self.menu, checkable=True)
+
+        if self.translator_engine == 'bing':
+            self.action_trans_bing.setChecked(True)
+        else:
+            self.action_trans_google.setChecked(True)
+
+        self.action_trans_google.triggered.connect(lambda: self.set_translator_engine('google'))
+        self.action_trans_bing.triggered.connect(lambda: self.set_translator_engine('bing'))
+
+        self.menu_translator.addAction(self.action_trans_google)
+        self.menu_translator.addAction(self.action_trans_bing)
         
         self.menu.addAction(self.action_version)
         self.menu.addSeparator()
         self.menu.addAction(self.action_translate)
         self.menu.addAction(self.action_font)
         self.menu.addMenu(self.menu_engine)
+        self.menu.addMenu(self.menu_translator)
         self.menu.addSeparator()
         self.menu.addAction(self.action_quit)
         
@@ -141,15 +164,19 @@ class SnapTransApp:
         """
         # 如果已經在選取狀態或已經顯示結果，將其關閉重製
         if self.selection_window:
+            self.selection_window.hide()
             self.selection_window.close()
             self.selection_window.deleteLater()
+            self.selection_window = None
             
         if self.result_window:
+            self.result_window.hide()
             self.result_window.close()
             self.result_window.deleteLater()
             self.result_window = None
             
         if self.loading_window:
+            self.loading_window.hide()
             self.loading_window.close()
             self.loading_window.deleteLater()
             self.loading_window = None
@@ -163,9 +190,11 @@ class SnapTransApp:
         """
         當使用者取消選取（點擊空白後放開或按ESC）時，只關閉遮罩，不退出程式
         """
-        self.selection_window.close()
-        self.selection_window.deleteLater()
-        self.selection_window = None
+        if self.selection_window:
+            self.selection_window.hide()
+            self.selection_window.close()
+            self.selection_window.deleteLater()
+            self.selection_window = None
 
     def on_selection_completed(self, rect):
         """
@@ -174,15 +203,28 @@ class SnapTransApp:
         self.target_rect = rect
         QApplication.setOverrideCursor(Qt.WaitCursor)
         
+        # 1. 立即先抓取螢幕畫面，確保不會抓到後續顯示的「辨識中...」視窗
+        x, y = rect.x(), rect.y()
+        w, h = rect.width(), rect.height()
+        temp_img_path = capture_screen(x, y, w, h)
+        
         # 顯示「辨識中...」
+        if self.loading_window:
+            self.loading_window.hide()
+            self.loading_window.close()
+            self.loading_window.deleteLater()
+            self.loading_window = None
+            
         self.loading_window = LoadingOverlayWindow(rect)
         self.loading_window.show()
         
         self.worker = TranslationWorker(
-            rect, 
-            font_path=self.font_path, 
+            rect,
+            font_path=self.font_path,
             font_family=self.font_family,
-            ocr_engine=self.ocr_engine
+            ocr_engine=self.ocr_engine,
+            translator_engine=self.translator_engine,
+            img_path=temp_img_path
         )
         self.worker.finished.connect(self.on_translation_finished)
         self.worker.error.connect(self.on_translation_error)
@@ -203,6 +245,23 @@ class SnapTransApp:
             self.action_engine_win.setChecked(False)
             self.action_engine_tes.setChecked(True)
             self.tray_icon.showMessage("引擎切換", "已切換為：Tesseract OCR", QSystemTrayIcon.Information, 2000)
+
+    def set_translator_engine(self, engine: str):
+        """切換翻譯引擎並儲存設定"""
+        self.translator_engine = engine
+        self._cfg['translator_engine'] = engine
+        cfg_module.save_config(self._cfg)
+
+        if engine == 'bing':
+            self.action_trans_google.setChecked(False)
+            self.action_trans_bing.setChecked(True)
+            self.tray_icon.showMessage("翻譯引擎", "已切換為：Bing 翻譯（免費）",
+                                       QSystemTrayIcon.Information, 2000)
+        else:
+            self.action_trans_google.setChecked(True)
+            self.action_trans_bing.setChecked(False)
+            self.tray_icon.showMessage("翻譯引擎", "已切換為：Google 翻譯",
+                                       QSystemTrayIcon.Information, 2000)
 
     def open_font_settings(self):
         """開啟字體選擇對話框，儲存至 config.json"""
@@ -239,6 +298,7 @@ class SnapTransApp:
         
         # 關閉載入提示
         if self.loading_window:
+            self.loading_window.hide()
             self.loading_window.close()
             self.loading_window.deleteLater()
             self.loading_window = None
@@ -248,9 +308,11 @@ class SnapTransApp:
             
         self.result_window.set_image(out_img_path, self.target_rect)
         
-        self.selection_window.close()
-        self.selection_window.deleteLater()
-        self.selection_window = None
+        if self.selection_window:
+            self.selection_window.hide()
+            self.selection_window.close()
+            self.selection_window.deleteLater()
+            self.selection_window = None
 
     def on_translation_error(self, error_msg):
         """
@@ -260,15 +322,18 @@ class SnapTransApp:
         
         # 關閉載入提示
         if self.loading_window:
+            self.loading_window.hide()
             self.loading_window.close()
             self.loading_window.deleteLater()
             self.loading_window = None
             
         QMessageBox.warning(None, "發生錯誤", error_msg)
         
-        self.selection_window.close()
-        self.selection_window.deleteLater()
-        self.selection_window = None
+        if self.selection_window:
+            self.selection_window.hide()
+            self.selection_window.close()
+            self.selection_window.deleteLater()
+            self.selection_window = None
 
     def quit_app(self):
         """完全退出程式，停止監聽執行緒"""

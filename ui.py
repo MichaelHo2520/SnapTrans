@@ -14,12 +14,15 @@ class TranslationWorker(QThread):
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, rect, font_path='', font_family='', ocr_engine='windows'):
+    def __init__(self, rect, font_path='', font_family='', ocr_engine='windows',
+                 translator_engine='google', img_path=None):
         super().__init__()
         self.rect = rect
         self.font_path = font_path
         self.font_family = font_family
         self.ocr_engine = ocr_engine
+        self.translator_engine = translator_engine
+        self.img_path = img_path
 
     def run(self):
         try:
@@ -27,14 +30,17 @@ class TranslationWorker(QThread):
             w, h = self.rect.width(), self.rect.height()
             
             # 1. 畫面擷取
-            img_path = capture_screen(x, y, w, h)
+            img_path = self.img_path
+            if not img_path:
+                img_path = capture_screen(x, y, w, h)
             
             # 2. OCR 辨識、翻譯與影像合成
             out_img_path, err_msg = process_and_translate_image(
-                img_path, 
+                img_path,
                 font_path=self.font_path or None,
                 font_family=self.font_family or None,
-                ocr_engine=self.ocr_engine
+                ocr_engine=self.ocr_engine,
+                translator_engine=self.translator_engine
             )
             
             if err_msg:
@@ -181,6 +187,12 @@ class ImageOverlayWindow(QWidget):
         # image_label 用絕對定位，不使用 layout
         self.image_label = QLabel(self)
         self.image_label.setCursor(Qt.PointingHandCursor)
+        
+        # 縮放相關狀態
+        self.original_pixmap = None
+        self.scale_factor = 1.0
+        self.original_x = 0
+        self.original_y = 0
 
     def set_image(self, image_path, target_rect):
         """
@@ -204,6 +216,9 @@ class ImageOverlayWindow(QWidget):
         )
         painter.end()
         
+        self.original_pixmap = pixmap
+        self.scale_factor = 1.0
+        
         self.image_label.setPixmap(pixmap)
         self.image_label.setFixedSize(pixmap.size())
         
@@ -212,9 +227,9 @@ class ImageOverlayWindow(QWidget):
         self.setGeometry(virtual_rect)
         
         # 圖片位置：target_rect 相對於虛擬桌面左上角的偏移
-        img_x = target_rect.x() - virtual_rect.x()
-        img_y = target_rect.y() - virtual_rect.y()
-        self.image_label.move(img_x, img_y)
+        self.original_x = target_rect.x() - virtual_rect.x()
+        self.original_y = target_rect.y() - virtual_rect.y()
+        self.image_label.move(self.original_x, self.original_y)
         
         self.show()
         self.activateWindow()
@@ -230,6 +245,54 @@ class ImageOverlayWindow(QWidget):
         # 按下 ESC 關閉此 overlay，程式繼續在系統列執行
         if event.key() == Qt.Key_Escape:
             self.hide()
+
+    def wheelEvent(self, event):
+        """
+        支援滑鼠滾輪縮放圖片
+        """
+        if not self.original_pixmap:
+            return
+            
+        # 判斷滾輪方向 (angleDelta().y() > 0 代表往上滾/放大)
+        delta = event.angleDelta().y()
+        if delta > 0:
+            self.scale_factor *= 1.15
+        elif delta < 0:
+            self.scale_factor /= 1.15
+            
+        # 限制縮放極限 (0.2x 到 10.0x)
+        self.scale_factor = max(0.2, min(self.scale_factor, 10.0))
+        
+        self._update_image_geometry()
+
+    def _update_image_geometry(self):
+        """
+        根據目前的 scale_factor 重新縮放圖片並置中於原始中心點
+        """
+        if not self.original_pixmap:
+            return
+            
+        # 計算新的尺寸
+        new_width = int(self.original_pixmap.width() * self.scale_factor)
+        new_height = int(self.original_pixmap.height() * self.scale_factor)
+        
+        # 套用高品質縮放
+        scaled_pixmap = self.original_pixmap.scaled(
+            new_width, new_height,
+            Qt.KeepAspectRatio, Qt.SmoothTransformation
+        )
+        
+        self.image_label.setPixmap(scaled_pixmap)
+        self.image_label.setFixedSize(scaled_pixmap.size())
+        
+        # 保持中心點不變
+        orig_center_x = self.original_x + self.original_pixmap.width() / 2
+        orig_center_y = self.original_y + self.original_pixmap.height() / 2
+        
+        new_x = int(orig_center_x - new_width / 2)
+        new_y = int(orig_center_y - new_height / 2)
+        
+        self.image_label.move(new_x, new_y)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
