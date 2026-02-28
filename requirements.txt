@@ -4,3 +4,4 @@ pytesseract
 Pillow
 deep-translator
 keyboard
+requests

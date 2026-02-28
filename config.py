@@ -4,8 +4,10 @@ import os
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
 
 DEFAULT_CONFIG = {
-    'font_family': '',   # 空字串 = 自動選擇
-    'font_path':   '',   # 字型檔完整路徑
+    'font_family':       '',         # 空字串 = 自動選擇
+    'font_path':         '',         # 字型檔完整路徑
+    'ocr_engine':        'windows',  # 'windows' | 'tesseract'
+    'translator_engine': 'google',   # 'google'  | 'bing'
 }
 
 def load_config():
