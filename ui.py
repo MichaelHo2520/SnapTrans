@@ -194,6 +194,9 @@ class ImageOverlayWindow(QWidget):
         self.original_x = 0
         self.original_y = 0
 
+        # 拖曳相關狀態
+        self.drag_start_pos = None
+
     def set_image(self, image_path, target_rect):
         """
         設定並顯示翻譯好的圖片。
@@ -296,8 +299,13 @@ class ImageOverlayWindow(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            # 左鍵點擊：關閉 overlay
-            self.hide()
+            # 檢查點擊是否在翻譯圖片的範圍內
+            if self.image_label.geometry().contains(event.pos()):
+                # 在圖片內：開始拖曳
+                self.drag_start_pos = event.pos() - self.image_label.pos()
+            else:
+                # 在圖片外：關閉 overlay
+                self.hide()
         elif event.button() == Qt.RightButton:
             # 右鍵：顯示操作選單
             menu = QMenu(self)
@@ -311,6 +319,25 @@ class ImageOverlayWindow(QWidget):
             action_close.triggered.connect(self.hide)
 
             menu.exec_(event.globalPos())
+
+    def mouseMoveEvent(self, event):
+        if self.drag_start_pos is not None and (event.buttons() & Qt.LeftButton):
+            # 左鍵拖曳中
+            new_pos = event.pos() - self.drag_start_pos
+            self.image_label.move(new_pos)
+            
+            # 更新 original_x 和 original_y 讓後續滾輪縮放時中心點維持正確
+            cur_width = self.image_label.width()
+            cur_height = self.image_label.height()
+            cur_center_x = new_pos.x() + cur_width / 2.0
+            cur_center_y = new_pos.y() + cur_height / 2.0
+            
+            self.original_x = cur_center_x - self.original_pixmap.width() / 2.0
+            self.original_y = cur_center_y - self.original_pixmap.height() / 2.0
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_start_pos = None
 
     def _copy_to_clipboard(self):
         """將目前顯示的翻譯圖片複製到系統剪貼簿"""

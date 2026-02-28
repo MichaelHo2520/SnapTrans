@@ -276,14 +276,36 @@ def process_and_translate_image(image_path, font_path=None, font_family=None,
     if not valid_words:
         return None, "未能辨識出任何有效文字，請重新選取。"
     
-    # 2. 先按 block+line 合成粗分組，再依水平間距做細分
+    # 2. 依據 block+line 與垂直重疊度合成粗分組，再依水平間距做細分
     line_buckets = {}
     for w in valid_words:
         key = (w['block'], w['line'])
         line_buckets.setdefault(key, []).append(w)
+        
+    refined_buckets = []
+    for words in line_buckets.values():
+        # 先按 Y 座標排序，分離垂直間距過大的文字（主要修正 Tesseract 將垂直列表誤判為同行的問題）
+        words.sort(key=lambda w: w['top'])
+        current_y_group = [words[0]]
+        for i in range(1, len(words)):
+            prev = current_y_group[-1]
+            curr = words[i]
+            
+            # 計算垂直中心點距離與平均高度
+            prev_center = prev['top'] + prev['height'] / 2
+            curr_center = curr['top'] + curr['height'] / 2
+            avg_height = (prev['height'] + curr['height']) / 2
+            
+            # 如果垂直中心點距離小於平均高度的 0.6 倍，視為同一行
+            if abs(curr_center - prev_center) < avg_height * 0.6:
+                current_y_group.append(curr)
+            else:
+                refined_buckets.append(current_y_group)
+                current_y_group = [curr]
+        refined_buckets.append(current_y_group)
     
     final_groups = []
-    for words in line_buckets.values():
+    for words in refined_buckets:
         words.sort(key=lambda w: w['left'])
         group = [words[0]]
         for i in range(1, len(words)):
