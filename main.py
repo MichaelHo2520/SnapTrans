@@ -11,7 +11,7 @@ from core import capture_screen
 import config as cfg_module
 import updater
 
-__version__ = "v1.0.2"
+__version__ = "v1.0.3"
 
 
 def set_dpi_awareness():
@@ -283,7 +283,8 @@ class SnapTransApp:
         dlg.setWindowTitle("選擇翻譯字體")
         # 移除 Qt.WindowContextHelpButtonHint 就不會有問號了
         dlg.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint)
-        dlg.setFixedSize(380, 200)
+        # 用 MinimumSize 取代 FixedSize 避免文字被上下裁切
+        dlg.setMinimumWidth(380)
         
         # 套用現代化樣式表，並使用 pt (point) 取代 px 避免在高解析度螢幕下變模糊
         dlg.setStyleSheet("""
@@ -358,6 +359,7 @@ class SnapTransApp:
         # 溫馨提示
         hint_label = QLabel("💡 字體大小與粗細會由系統自動依照來源圖片版面計算，\n為保持最佳排版效果，此處僅需選擇字型款式。")
         hint_label.setObjectName("hintLabel")
+        hint_label.setWordWrap(True) # 允許自動斷行，避免左右被切
         main_layout.addWidget(hint_label)
         
         main_layout.addStretch()
