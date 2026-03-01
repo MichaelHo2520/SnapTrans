@@ -31,7 +31,7 @@ def find_font_path(family_name: str) -> str:
     """
     try:
         from PyQt5.QtWidgets import QApplication
-        from PyQt5.QtGui import QFontDatabase, QFont
+        from PyQt5.QtGui import QFontDatabase, QFont, QFontInfo
         
         internal_family = ""
         # QApplication 必須存在才能使用 QFontDatabase
@@ -39,7 +39,7 @@ def find_font_path(family_name: str) -> str:
             db = QFontDatabase()
             if family_name in db.families():
                 font = QFont(family_name)
-                fontInfo = db.fontInfo(font)
+                fontInfo = QFontInfo(font)
                 internal_family = fontInfo.family()
         
         # 嘗試從 registry 拿，因為 QFontDatabase 有時候還是沒有直接給 path 的 API
