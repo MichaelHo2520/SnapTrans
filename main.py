@@ -273,30 +273,59 @@ class SnapTransApp:
 
     def open_font_settings(self):
         """開啟字體選擇對話框，儲存至 config.json"""
-        # 建立当前已設定字體的預視 QFont
+        self._show_custom_font_dialog()
+
+    def _show_custom_font_dialog(self):
+        """自定義的字型選擇對話框，只顯示字型家族，不顯示大小與粗細"""
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QFontComboBox, QLabel
+        
+        dlg = QDialog()
+        dlg.setWindowTitle("選擇翻譯字體")
+        dlg.setWindowFlags(Qt.WindowStaysOnTopHint)
+        layout = QVBoxLayout()
+        
+        label = QLabel("請選擇您偏好的字體：\n(字體大小與粗細會由系統自動依照版面計算，不需設定)")
+        layout.addWidget(label)
+        
+        font_combo = QFontComboBox()
+        # 預設選中目前的字體
         current_family = self._cfg.get('font_family', '')
-        initial_font = QFont(current_family) if current_family else QFont()
+        if current_family:
+            font_combo.setCurrentFont(QFont(current_family))
+            
+        def on_font_selected(font):
+            # QFontComboBox default emits when selected, we don't strictly need to bind it
+            pass
+            
+        layout.addWidget(font_combo)
         
-        font, ok = QFontDialog.getFont(initial_font, None, "選擇翻譯字體")
-        if not ok:
-            return
+        btn_layout = QHBoxLayout()
+        ok_btn = QPushButton("確定")
+        cancel_btn = QPushButton("取消")
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
         
-        family = font.family()
-        # 搜尋對應的字型檔路徑
-        path = cfg_module.find_font_path(family)
+        dlg.setLayout(layout)
         
-        self._cfg['font_family'] = family
-        self._cfg['font_path'] = path
-        self.font_path = path
-        self.font_family = family
-        cfg_module.save_config(self._cfg)
+        ok_btn.clicked.connect(dlg.accept)
+        cancel_btn.clicked.connect(dlg.reject)
         
-        # 小提示確認
-        display = f"字體已設為：{family}"
-        if not path:
-            display += "\n（找不到對應的字型檔，將使用預設字體）"
-        self.tray_icon.showMessage("字體設定", display,
-                                   QSystemTrayIcon.Information, 2500)
+        if dlg.exec_() == QDialog.Accepted:
+            font = font_combo.currentFont()
+            family = font.family()
+            path = cfg_module.find_font_path(family)
+            
+            self._cfg['font_family'] = family
+            self._cfg['font_path'] = path
+            self.font_path = path
+            self.font_family = family
+            cfg_module.save_config(self._cfg)
+            
+            display = f"字體已設為：{family}"
+            if not path:
+                display += "\n（找不到對應的字型檔，將使用預設字體）"
+            self.tray_icon.showMessage("字體設定", display, QSystemTrayIcon.Information, 2500)
 
     def on_translation_finished(self, out_img_path):
         """
