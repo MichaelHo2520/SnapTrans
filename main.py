@@ -277,36 +277,101 @@ class SnapTransApp:
 
     def _show_custom_font_dialog(self):
         """自定義的字型選擇對話框，只顯示字型家族，不顯示大小與粗細"""
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QFontComboBox, QLabel
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QPushButton, QFontComboBox, QLabel, QFrame
         
         dlg = QDialog()
         dlg.setWindowTitle("選擇翻譯字體")
-        dlg.setWindowFlags(Qt.WindowStaysOnTopHint)
-        layout = QVBoxLayout()
+        dlg.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.WindowContextHelpButtonHint)
+        dlg.setFixedSize(380, 200)
         
-        label = QLabel("請選擇您偏好的字體：\n(字體大小與粗細會由系統自動依照版面計算，不需設定)")
-        layout.addWidget(label)
+        # 套用現代化樣式表
+        dlg.setStyleSheet("""
+            QDialog {
+                background-color: #f8f9fa;
+            }
+            QLabel {
+                font-size: 14px;
+                color: #333333;
+            }
+            QLabel#hintLabel {
+                font-size: 12px;
+                color: #666666;
+            }
+            QFontComboBox {
+                font-size: 14px;
+                padding: 6px;
+                border: 1px solid #ced4da;
+                border-radius: 4px;
+                background-color: white;
+            }
+            QFontComboBox::drop-down {
+                border-left: 1px solid #ced4da;
+                width: 30px;
+            }
+            QPushButton {
+                font-size: 14px;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            QPushButton#okBtn {
+                background-color: #0d6efd;
+                color: white;
+                border: none;
+            }
+            QPushButton#okBtn:hover {
+                background-color: #0b5ed7;
+            }
+            QPushButton#cancelBtn {
+                background-color: white;
+                color: #333333;
+                border: 1px solid #ced4da;
+            }
+            QPushButton#cancelBtn:hover {
+                background-color: #e9ecef;
+            }
+        """)
         
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(24, 24, 24, 24)
+        main_layout.setSpacing(16)
+        
+        # 標題區
+        title_label = QLabel("選擇您偏好的翻譯顯示字體：")
+        title_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        main_layout.addWidget(title_label)
+        
+        # 字體下拉選單
         font_combo = QFontComboBox()
-        # 預設選中目前的字體
         current_family = self._cfg.get('font_family', '')
         if current_family:
             font_combo.setCurrentFont(QFont(current_family))
-            
-        def on_font_selected(font):
-            # QFontComboBox default emits when selected, we don't strictly need to bind it
-            pass
-            
-        layout.addWidget(font_combo)
+        main_layout.addWidget(font_combo)
         
+        # 溫馨提示
+        hint_label = QLabel("💡 字體大小與粗細會由系統自動依照來源圖片版面計算，\n為保持最佳排版效果，此處僅需選擇字型款式。")
+        hint_label.setObjectName("hintLabel")
+        main_layout.addWidget(hint_label)
+        
+        main_layout.addStretch()
+        
+        # 按鈕區
         btn_layout = QHBoxLayout()
-        ok_btn = QPushButton("確定")
-        cancel_btn = QPushButton("取消")
-        btn_layout.addWidget(ok_btn)
-        btn_layout.addWidget(cancel_btn)
-        layout.addLayout(btn_layout)
+        btn_layout.setSpacing(12)
         
-        dlg.setLayout(layout)
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setObjectName("cancelBtn")
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        
+        ok_btn = QPushButton("儲存設定")
+        ok_btn.setObjectName("okBtn")
+        ok_btn.setCursor(Qt.PointingHandCursor)
+        
+        btn_layout.addStretch()
+        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(ok_btn)
+        
+        main_layout.addLayout(btn_layout)
+        dlg.setLayout(main_layout)
         
         ok_btn.clicked.connect(dlg.accept)
         cancel_btn.clicked.connect(dlg.reject)
@@ -324,8 +389,8 @@ class SnapTransApp:
             
             display = f"字體已設為：{family}"
             if not path:
-                display += "\n（找不到對應的字型檔，將使用預設字體）"
-            self.tray_icon.showMessage("字體設定", display, QSystemTrayIcon.Information, 2500)
+                display += "\n（⚠️ 找不到對應的字型檔，將退回使用預設字體）"
+            self.tray_icon.showMessage("字體設定成功", display, QSystemTrayIcon.Information, 3000)
 
     def on_translation_finished(self, out_img_path):
         """
