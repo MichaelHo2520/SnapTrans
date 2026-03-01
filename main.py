@@ -11,7 +11,7 @@ from core import capture_screen
 import config as cfg_module
 import updater
 
-__version__ = "v1.0.1"
+__version__ = "v1.0.2"
 
 
 def set_dpi_awareness():
@@ -281,36 +281,44 @@ class SnapTransApp:
         
         dlg = QDialog()
         dlg.setWindowTitle("選擇翻譯字體")
-        dlg.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.WindowContextHelpButtonHint)
+        # 移除 Qt.WindowContextHelpButtonHint 就不會有問號了
+        dlg.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint)
         dlg.setFixedSize(380, 200)
         
-        # 套用現代化樣式表
+        # 套用現代化樣式表，並使用 pt (point) 取代 px 避免在高解析度螢幕下變模糊
         dlg.setStyleSheet("""
             QDialog {
                 background-color: #f8f9fa;
             }
             QLabel {
-                font-size: 14px;
+                font-family: "Microsoft JhengHei", "Segoe UI", sans-serif;
+                font-size: 10pt;
                 color: #333333;
             }
+            QLabel#titleLabel {
+                font-size: 11pt;
+                font-weight: bold;
+            }
             QLabel#hintLabel {
-                font-size: 12px;
+                font-size: 9pt;
                 color: #666666;
             }
             QFontComboBox {
-                font-size: 14px;
-                padding: 6px;
+                font-family: "Microsoft JhengHei", "Segoe UI", sans-serif;
+                font-size: 10pt;
+                padding: 4px;
                 border: 1px solid #ced4da;
                 border-radius: 4px;
                 background-color: white;
             }
             QFontComboBox::drop-down {
                 border-left: 1px solid #ced4da;
-                width: 30px;
+                width: 24px;
             }
             QPushButton {
-                font-size: 14px;
-                padding: 8px 16px;
+                font-family: "Microsoft JhengHei", "Segoe UI", sans-serif;
+                font-size: 10pt;
+                padding: 6px 16px;
                 border-radius: 4px;
             }
             QPushButton#okBtn {
@@ -337,7 +345,7 @@ class SnapTransApp:
         
         # 標題區
         title_label = QLabel("選擇您偏好的翻譯顯示字體：")
-        title_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        title_label.setObjectName("titleLabel")
         main_layout.addWidget(title_label)
         
         # 字體下拉選單
