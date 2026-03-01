@@ -9,6 +9,9 @@ from PyQt5.QtGui import QIcon, QPixmap, QColor, QFont
 from ui import SelectionWindow, ImageOverlayWindow, TranslationWorker, LoadingOverlayWindow
 from core import capture_screen
 import config as cfg_module
+import updater
+
+__version__ = "v1.0.0"
 
 def set_dpi_awareness():
     """
@@ -80,8 +83,11 @@ class SnapTransApp:
         self.menu = QMenu()
         
         # 版本資訊（置頂，不可點擊）
-        self.action_version = QAction("SnapTrans  V1.00")
+        self.action_version = QAction(f"SnapTrans {__version__}")
         self.action_version.setEnabled(False)
+        
+        self.action_update = QAction("檢查更新", self.menu)
+        self.action_update.triggered.connect(lambda: updater.check_for_updates(self, __version__))
         
         self.action_translate = QAction("開始翻譯 (Ctrl+F1)")
         self.action_translate.triggered.connect(self.start_selection)
@@ -130,6 +136,7 @@ class SnapTransApp:
         self.menu_translator.addAction(self.action_trans_bing)
         
         self.menu.addAction(self.action_version)
+        self.menu.addAction(self.action_update)
         self.menu.addSeparator()
         self.menu.addAction(self.action_translate)
         self.menu.addAction(self.action_font)

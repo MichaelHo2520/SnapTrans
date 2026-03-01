@@ -1,0 +1,58 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        
+    - name: Build with PyInstaller
+      run: |
+        pyinstaller --name SnapTrans --onedir --noconsole --noconfirm `
+        --add-data "Tesseract-OCR;Tesseract-OCR" `
+        --icon "icon/icon.ico" `
+        --exclude-module scipy --exclude-module pandas --exclude-module matplotlib --exclude-module numpy `
+        --exclude-module IPython --exclude-module PyQt5.QtNetwork --exclude-module PyQt5.QtQml `
+        --exclude-module PyQt5.QtSql --exclude-module PyQt5.QtWebSockets --exclude-module PyQt5.QtWebEngineCore `
+        --exclude-module PyQt5.QtBluetooth --exclude-module tkinter `
+        main.py
+        
+    - name: Create Update ZIP (Micro Update)
+      run: |
+        Compress-Archive -Path dist\SnapTrans\SnapTrans.exe -DestinationPath dist\SnapTrans-Update-${{ github.ref_name }}.zip
+        
+    - name: Create Full ZIP (Complete Build)
+      run: |
+        Compress-Archive -Path dist\SnapTrans -DestinationPath dist\SnapTrans-Win-${{ github.ref_name }}.zip
+        
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          dist/SnapTrans-Update-${{ github.ref_name }}.zip
+          dist/SnapTrans-Win-${{ github.ref_name }}.zip
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
