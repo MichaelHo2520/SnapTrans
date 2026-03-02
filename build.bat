@@ -25,11 +25,11 @@ if %ERRORLEVEL% neq 0 (
 :: 3. 呼叫 Inno Setup 編譯器
 echo [3/3] Compiling Inno Setup installer...
 :: Check standard installation paths for Inno Setup (ISCC.exe)
-set ISCC="C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-if not exist %ISCC% set ISCC="C:\Program Files\Inno Setup 6\ISCC.exe"
+set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+if not exist "%ISCC%" set "ISCC=C:\Program Files\Inno Setup 6\ISCC.exe"
 
-if exist %ISCC% (
-    %ISCC% setup.iss
+if exist "%ISCC%" (
+    "%ISCC%" setup.iss
     if %ERRORLEVEL% neq 0 (
         echo.
         echo [ERROR] Inno Setup compilation failed.
