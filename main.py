@@ -11,7 +11,7 @@ from core import capture_screen
 import config as cfg_module
 import updater
 
-__version__ = "v1.1.0"
+__version__ = "v1.2.0"
 
 
 def set_dpi_awareness():
@@ -135,12 +135,16 @@ class SnapTransApp:
 
         self.menu_translator.addAction(self.action_trans_google)
         self.menu_translator.addAction(self.action_trans_bing)
-        
+        self.action_autostart = QAction("開機自動啟動", self.menu, checkable=True)
+        self.action_autostart.setChecked(self._cfg.get('autostart', False))
+        self.action_autostart.triggered.connect(self.toggle_autostart)
+
         self.menu.addAction(self.action_version)
         self.menu.addAction(self.action_update)
         self.menu.addSeparator()
         self.menu.addAction(self.action_translate)
         self.menu.addAction(self.action_font)
+        self.menu.addAction(self.action_autostart)
         self.menu.addMenu(self.menu_engine)
         self.menu.addMenu(self.menu_translator)
         self.menu.addSeparator()
@@ -402,6 +406,40 @@ class SnapTransApp:
                 display += "\n（⚠️ 找不到對應的字型檔，將退回使用預設字體）"
             self.tray_icon.showMessage("字體設定成功", display, QSystemTrayIcon.Information, 3000)
 
+    def toggle_autostart(self, checked: bool):
+        """切換開機自動啟動狀態，並寫入 config 與 Registry"""
+        self._cfg['autostart'] = checked
+        cfg_module.save_config(self._cfg)
+        self._set_registry_autostart(checked)
+        
+        status = "已開啟" if checked else "已關閉"
+        self.tray_icon.showMessage("開機自動啟動", f"{status}開機自動啟動", QSystemTrayIcon.Information, 2000)
+
+    def _set_registry_autostart(self, enable: bool):
+        """透過 Python winreg 修改 Windows 註冊表的 Run 機碼"""
+        import winreg
+        key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+        app_name = "SnapTrans"
+        
+        try:
+            exe_path = sys.executable
+            # 如果不是打包後的 exe 或是 python.exe (開發環境)，就不寫入或寫入無效路徑
+            if not exe_path.lower().endswith('.exe') or 'python.exe' in exe_path.lower():
+                return
+                
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_ALL_ACCESS) # type: ignore
+            if enable:
+                # 加上引號避免路徑中有空白導致無法執行
+                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, f'"{exe_path}"') # type: ignore
+            else:
+                try:
+                    winreg.DeleteValue(key, app_name) # type: ignore
+                except FileNotFoundError:
+                    pass # 原本就沒有，不報錯
+            winreg.CloseKey(key) # type: ignore
+        except Exception as e:
+            print(f"寫入註冊表失敗: {e}")
+
     def on_translation_finished(self, out_img_path):
         """
         當背景翻譯與影像處理成功後觸發，顯示翻譯好的圖片
@@ -458,6 +496,19 @@ class SnapTransApp:
 
 
 if __name__ == '__main__':
+    # --- 單一實體檢查 (Single Instance Lock) ---
+    # 利用 Windows Mutex 確保同一時間只能有一個 SnapTrans 執行
+    if sys.platform == 'win32':
+        mutex_name = "SnapTrans_SingleInstance_Mutex"
+        # 建立具名互斥鎖
+        mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
+        last_error = ctypes.windll.kernel32.GetLastError()
+        # 183 = ERROR_ALREADY_EXISTS
+        if last_error == 183:
+            # 已經有一個實體在執行了，靜默退出
+            import os
+            os._exit(0)
+    
     # 1. 在建立 QApplication 之前務必設定好 DPI 感知
     set_dpi_awareness()
     

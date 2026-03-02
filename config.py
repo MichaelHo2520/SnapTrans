@@ -8,6 +8,7 @@ DEFAULT_CONFIG = {
     'font_path':         '',         # 字型檔完整路徑
     'ocr_engine':        'windows',  # 'windows' | 'tesseract'
     'translator_engine': 'google',   # 'google'  | 'bing'
+    'autostart':         False,      # 開機自動啟動
 }
 
 def load_config():
