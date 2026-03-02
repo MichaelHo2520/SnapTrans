@@ -5,3 +5,4 @@ Pillow
 deep-translator
 keyboard
 requests
+winsdk

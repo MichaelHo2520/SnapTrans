@@ -31,7 +31,9 @@ jobs:
         pyinstaller --name SnapTrans --onedir --noconsole --noconfirm `
         --add-data "Tesseract-OCR;Tesseract-OCR" `
         --icon "icon/icon.ico" `
-        --exclude-module scipy --exclude-module pandas --exclude-module matplotlib --exclude-module numpy `
+        --hidden-import winsdk --hidden-import winsdk.windows.media.ocr --hidden-import winsdk.windows.graphics.imaging `
+        --hidden-import winsdk.windows.storage --hidden-import winsdk.windows.globalization `
+        --exclude-module scipy --exclude-module matplotlib `
         --exclude-module IPython --exclude-module PyQt5.QtNetwork --exclude-module PyQt5.QtQml `
         --exclude-module PyQt5.QtSql --exclude-module PyQt5.QtWebSockets --exclude-module PyQt5.QtWebEngineCore `
         --exclude-module PyQt5.QtBluetooth --exclude-module tkinter `

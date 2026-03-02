@@ -6,8 +6,13 @@ cd /d "%~dp0.."
 echo ==========================================
 echo   🚀 SnapTrans (螢幕截圖翻譯工具) 打包腳本
 echo ==========================================
-echo 正在安裝/更新打包必備套件 (PyInstaller)...
-pip install pyinstaller
+echo 正在安裝/更新打包必備與專案套件...
+pip install -r requirements.txt pyinstaller
+
+echo.
+echo 正在關閉可能運行中的程式...
+taskkill /F /IM SnapTrans.exe /T 2>nul
+timeout /T 1 /NOBREAK >nul
 
 echo.
 echo 正在清理舊的建置檔案...
@@ -21,7 +26,7 @@ echo 開始打包專案...
 :: 使用 --add-data 將 Tesseract-OCR 目錄打包進來
 :: 使用 --icon 指定打包出來的 EXE 圖示
 :: 新增 --exclude-module 來排除不必要的龐大套件，為打包瘦身
-pyinstaller --noconsole --name "SnapTrans" --add-data "Tesseract-OCR;Tesseract-OCR" --icon="icon/icon.ico" --exclude-module scipy --exclude-module pandas --exclude-module matplotlib --exclude-module numpy --exclude-module IPython --exclude-module PyQt5.QtNetwork --exclude-module PyQt5.QtQml --exclude-module PyQt5.QtSql --exclude-module PyQt5.QtWebSockets --exclude-module PyQt5.QtWebEngineCore --exclude-module PyQt5.QtBluetooth --exclude-module tkinter main.py
+pyinstaller --noconsole --name "SnapTrans" --add-data "Tesseract-OCR;Tesseract-OCR" --icon="icon/icon.ico" --hidden-import winsdk --hidden-import winsdk.windows.media.ocr --hidden-import winsdk.windows.graphics.imaging --hidden-import winsdk.windows.storage --hidden-import winsdk.windows.globalization --exclude-module scipy --exclude-module matplotlib --exclude-module IPython --exclude-module PyQt5.QtNetwork --exclude-module PyQt5.QtQml --exclude-module PyQt5.QtSql --exclude-module PyQt5.QtWebSockets --exclude-module PyQt5.QtWebEngineCore --exclude-module PyQt5.QtBluetooth --exclude-module tkinter main.py
 
 if %errorlevel%==0 (
     echo.
