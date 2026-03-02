@@ -11,7 +11,7 @@ from core import capture_screen
 import config as cfg_module
 import updater
 
-__version__ = "v1.2.0"
+__version__ = "v1.2.1"
 
 
 def set_dpi_awareness():

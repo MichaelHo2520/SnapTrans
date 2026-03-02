@@ -22,7 +22,7 @@ def get_latest_release(repo):
         return None
 
 def download_file(url, target_path, progress_callback=None):
-    """下載檔案並提供進度回呼"""
+    """下載檔案並提供進度回呼 (回傳已下載 bytes 與總 bytes)"""
     try:
         response = requests.get(url, stream=True, timeout=10)
         response.raise_for_status()
@@ -34,8 +34,8 @@ def download_file(url, target_path, progress_callback=None):
             for data in response.iter_content(block_size):
                 file.write(data)
                 downloaded += len(data)
-                if total_size > 0 and progress_callback:
-                    progress_callback(int(downloaded * 100 / total_size))
+                if progress_callback:
+                    progress_callback(downloaded, total_size)
         return True
     except Exception as e:
         print(f"下載失敗: {e}")
@@ -155,12 +155,16 @@ def check_for_updates(app_instance, current_version):
     
     # 用 threading 跑下載以防 UI 凍結
     download_success = False
+    download_bytes_read = 0
+    download_total_bytes = 0
     
     def download_task():
         nonlocal download_success
-        def update_progress(pct):
-            pass
-        download_success = download_file(update_asset_url, zip_path)
+        def update_progress(downloaded, total):
+            nonlocal download_bytes_read, download_total_bytes
+            download_bytes_read = downloaded
+            download_total_bytes = total
+        download_success = download_file(update_asset_url, zip_path, progress_callback=update_progress)
         
     thread = threading.Thread(target=download_task)
     thread.start()
@@ -169,9 +173,20 @@ def check_for_updates(app_instance, current_version):
     def check_thread():
         if thread.is_alive():
             QTimer.singleShot(100, check_thread)
-            val = progress_dialog.value() + 1
-            if val > 99: val = 0
-            progress_dialog.setValue(val)
+            
+            # 建立進度文字
+            if download_total_bytes > 0:
+                mb_read = download_bytes_read / (1024 * 1024)
+                mb_total = download_total_bytes / (1024 * 1024)
+                pct = int(download_bytes_read * 100 / download_total_bytes)
+                
+                progress_dialog.setMaximum(100)
+                progress_dialog.setValue(pct)
+                progress_dialog.setLabelText(f"正在下載更新檔案...\n已下載: {mb_read:.2f} MB / {mb_total:.2f} MB")
+            else:
+                mb_read = download_bytes_read / (1024 * 1024)
+                progress_dialog.setMaximum(0) # Indeterminate mode
+                progress_dialog.setLabelText(f"正在下載更新檔案...\n已下載: {mb_read:.2f} MB")
         else:
             progress_dialog.close()
             if download_success:
