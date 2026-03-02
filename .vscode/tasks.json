@@ -70,6 +70,21 @@
         "isDefault": false
       },
       "problemMatcher": []
+    },
+    {
+      "label": "Build SnapTrans (PyInstaller + Inno Setup)",
+      "type": "shell",
+      "command": "${workspaceFolder}/build.bat",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
     }
   ]
 }
