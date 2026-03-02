@@ -51,14 +51,14 @@ def extract_and_apply_update(zip_path):
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(extract_dir)
             
-        # 尋找解壓縮出來的 SnapTrans.exe
-        new_exe_path = None
+        # 尋找解壓縮出來的主目錄 (包含 SnapTrans.exe 的那個資料夾)
+        update_source_dir = None
         for root, dirs, files in os.walk(extract_dir):
             if "SnapTrans.exe" in files:
-                new_exe_path = os.path.join(root, "SnapTrans.exe")
+                update_source_dir = root
                 break
                 
-        if not new_exe_path:
+        if not update_source_dir:
             return False, "在更新檔中找不到主程式！"
             
         # 準備目前的執行路徑
@@ -71,11 +71,11 @@ def extract_and_apply_update(zip_path):
         bat_path = os.path.join(current_dir, "update_apply.bat")
         
         # 產生背景覆蓋腳本
-        # 腳本邏輯: 等待 2 秒讓主程式關閉 -> 把新的 exe 複製過去 -> 執行新的 exe -> 刪除腳本自己
+        # 腳本邏輯: 等待 2 秒讓主程式關閉 -> 把新的目錄內容 xcopy 過去 -> 執行新的 exe -> 刪除腳本自己
         bat_content = f"""@echo off
 timeout /t 2 /nobreak > nul
 ping 127.0.0.1 -n 2 > nul
-copy /Y "{new_exe_path}" "{current_exe_path}"
+xcopy /Y /E /H /C /I "{update_source_dir}\\*" "{current_dir}"
 start "" "{current_exe_path}"
 del "%~f0"
 """
@@ -118,16 +118,16 @@ def check_for_updates(app_instance, current_version):
         QMessageBox.information(msg_parent, "檢查更新", f"目前已是最新版本 ({current_version})！")
         return
         
-    # 找到微更新檔案 (SnapTrans-Update-xxx.zip)
+    # 改為下載完整發布檔案 (SnapTrans-Win-xxx.zip)，因為環境更新需要整個 _internal 目錄
     assets = release_info.get("assets", [])
     update_asset_url = None
     for asset in assets:
-        if "Update" in asset["name"] and asset["name"].endswith(".zip"):
+        if "Win" in asset["name"] and asset["name"].endswith(".zip"):
             update_asset_url = asset["browser_download_url"]
             break
             
     if not update_asset_url:
-        QMessageBox.warning(msg_parent, "更新錯誤", "找到新版本，但發布包中找不到微更新檔案 (Update.zip)。\n請到 GitHub 網頁手動下載完整版。")
+        QMessageBox.warning(msg_parent, "更新錯誤", "找到新版本，但發布包中找不到完整更新檔案 (Win...zip)。\n請到 GitHub 網頁手動下載。")
         return
         
     # 跳出更新確認對話框
@@ -145,7 +145,9 @@ def check_for_updates(app_instance, current_version):
         
     # 開始下載
     progress_dialog = QProgressDialog("正在下載更新檔案...", "取消", 0, 100, msg_parent)
-    progress_dialog.setWindowTitle("下載中")
+    progress_dialog.setWindowTitle("下載更新")
+    progress_dialog.setMinimumWidth(350)
+    progress_dialog.setWindowFlags(progress_dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
     progress_dialog.setWindowModality(Qt.WindowModal)
     progress_dialog.setMinimumDuration(0)
     

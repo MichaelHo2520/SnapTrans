@@ -39,10 +39,6 @@ jobs:
         --exclude-module PyQt5.QtBluetooth --exclude-module tkinter `
         main.py
         
-    - name: Create Update ZIP (Micro Update)
-      run: |
-        Compress-Archive -Path dist\SnapTrans\SnapTrans.exe -DestinationPath dist\SnapTrans-Update-${{ github.ref_name }}.zip
-        
     - name: Create Full ZIP (Complete Build)
       run: |
         Compress-Archive -Path dist\SnapTrans -DestinationPath dist\SnapTrans-Win-${{ github.ref_name }}.zip
@@ -51,7 +47,6 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          dist/SnapTrans-Update-${{ github.ref_name }}.zip
           dist/SnapTrans-Win-${{ github.ref_name }}.zip
         draft: false
         prerelease: false
