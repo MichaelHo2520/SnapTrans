@@ -1,0 +1,75 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "打包 SnapTrans",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/build.bat",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "部署 SnapTrans (僅 EXE)",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/deploy_exe_only.bat",
+      "group": {
+        "kind": "none"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "部署 SnapTrans (包含所有 Libraries/Framework)",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/deploy_libs.bat",
+      "group": {
+        "kind": "none"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "重新產生圖示資源 (Build Icons)",
+      "type": "shell",
+      "command": "${workspaceFolder}/scripts/build_icons.bat",
+      "group": {
+        "kind": "none"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build & Deploy SnapTrans",
+      "dependsOn": [
+        "打包 SnapTrans",
+        "部署 SnapTrans (僅 EXE)"
+      ],
+      "dependsOrder": "sequence",
+      "group": {
+        "kind": "build",
+        "isDefault": false
+      },
+      "problemMatcher": []
+    }
+  ]
+}
