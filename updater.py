@@ -44,9 +44,9 @@ def download_file(url, target_path, progress_callback=None):
 def extract_and_apply_update(zip_path):
     """解壓縮並建立/執行替換腳本"""
     try:
-        extract_dir = os.path.join(tempfile.gettempdir(), "snaptrans_update")
-        if not os.path.exists(extract_dir):
-            os.makedirs(extract_dir)
+        import time
+        extract_dir = os.path.join(tempfile.gettempdir(), f"snaptrans_update_{int(time.time())}")
+        os.makedirs(extract_dir, exist_ok=True)
             
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             zip_ref.extractall(extract_dir)
@@ -71,11 +71,12 @@ def extract_and_apply_update(zip_path):
         bat_path = os.path.join(current_dir, "update_apply.bat")
         
         # 產生背景覆蓋腳本
-        # 腳本邏輯: 等待 2 秒讓主程式關閉 -> 把新的目錄內容 xcopy 過去 -> 執行新的 exe -> 刪除腳本自己
+        # 腳本邏輯: 等待 2 秒讓主程式關閉 -> 把新的目錄內容 xcopy 過去 -> 刪除解壓目錄 -> 執行新的 exe -> 刪除腳本自己
         bat_content = f"""@echo off
 timeout /t 2 /nobreak > nul
 ping 127.0.0.1 -n 2 > nul
 xcopy /Y /E /H /C /I "{update_source_dir}\\*" "{current_dir}"
+rmdir /S /Q "{extract_dir}"
 start "" "{current_exe_path}"
 del "%~f0"
 """

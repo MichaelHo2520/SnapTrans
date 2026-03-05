@@ -4,9 +4,9 @@
 [Setup]
 ; App Information
 AppName=SnapTrans
-AppVersion=1.2.1
+AppVersion=1.2.2
 AppPublisher=MichaelHo2520
-AppVerName=SnapTrans 1.2.1
+AppVerName=SnapTrans 1.2.2
 
 ; Installation Directory
 DefaultDirName={autopf}\SnapTrans
@@ -15,7 +15,7 @@ DisableProgramGroupPage=yes
 
 ; Output Settings (Generated Installer Location)
 OutputDir=deploy
-OutputBaseFilename=SnapTrans_Setup_v1.2.1
+OutputBaseFilename=SnapTrans_Setup_v1.2.2
 SetupIconFile=icon\icon.ico
 
 ; Compression Settings (Reduces file size significantly)
