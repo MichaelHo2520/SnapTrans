@@ -1,6 +1,7 @@
 import sys
 import ctypes
-import keyboard
+from pynput import keyboard as pynput_kb
+import time
 import signal
 from PyQt5.QtWidgets import (QApplication, QMessageBox, QSystemTrayIcon,
                              QMenu, QAction, QFontDialog)
@@ -11,7 +12,7 @@ from core import capture_screen
 import config as cfg_module
 import updater
 
-__version__ = "v1.2.1"
+__version__ = "v1.2.2"
 
 
 def set_dpi_awareness():
@@ -30,21 +31,42 @@ def set_dpi_awareness():
 
 class HotkeyThread(QThread):
     """
-    在背景監聽全域快捷鍵的執行緒，當觸發時透過 signal 通知主畫面彈出
+    在背景監聽全域快捷鍵的執行緒，當觸發時透過 signal 通知主畫面彈出。
+    使用 pynput 的 GlobalHotKeys，並包含自動重連機制：
+    當 Windows 低階鈎子被系統事件（鎖屏、Task Manager、UAC）移除後，
+    能自動偵測並重新建立監聽器。
     """
     hotkey_triggered = pyqtSignal()
 
+    def __init__(self):
+        super().__init__()
+        self._running = True
+        self._listener = None
+
     def run(self):
-        # 註冊全域快捷鍵 Ctrl+F1
-        keyboard.add_hotkey('ctrl+f1', self.on_hotkey)
-        # 讓執行緒持續等待直到被終止；捕捉例外避免程式崩潰
-        try:
-            keyboard.wait()
-        except (KeyboardInterrupt, SystemExit):
-            pass
+        while self._running:
+            try:
+                self._listener = pynput_kb.GlobalHotKeys({
+                    '<ctrl>+<f1>': self.on_hotkey
+                })
+                self._listener.start()
+                self._listener.join()  # 阻塞直到監聽器停止
+            except Exception:
+                pass
+            finally:
+                self._listener = None
+            # 監聽器意外斷開 → 等待 1 秒後自動重建
+            if self._running:
+                time.sleep(1)
 
     def on_hotkey(self):
         self.hotkey_triggered.emit()
+
+    def stop(self):
+        """安全停止監聽執行緒"""
+        self._running = False
+        if self._listener:
+            self._listener.stop()
 
 
 # 載入資源檔
@@ -488,7 +510,7 @@ class SnapTransApp:
     def quit_app(self):
         """完全退出程式，停止監聽執行緒"""
         try:
-            keyboard.unhook_all()
+            self.hotkey_thread.stop()
         except Exception:
             pass
         self.tray_icon.hide()
